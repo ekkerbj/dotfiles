@@ -1,0 +1,73 @@
+#!/bin/bash
+# ralph.sh - ADR-Aware Metadata-Driven Loop
+
+# 1. Environment & Pre-flight Diagnostics
+if ! command -v jq &> /dev/null; then
+    echo "❌ Error: 'jq' is not installed. Required for PRD verification."
+    exit 1
+fi
+
+PRD="prd.json"
+PROGRESS="progress.txt"
+LIMIT=${1:-10}
+
+if [[ ! -f "$PRD" ]]; then
+    echo "❌ Error: $PRD not found."
+    exit 1
+fi
+
+echo "🚀 Starting Ralph Loop ($LIMIT max iterations)"
+
+for ((i=1; i<=LIMIT; i++)); do
+  # 2. External State Verification (Gatekeeper)
+  # Uses jq to count backlog items where 'passes' is false.
+  INCOMPLETE_TASKS=$(jq '[.backlog[] | select(.passes == false)] | length' "$PRD")
+  
+  if [[ "$INCOMPLETE_TASKS" -eq 0 ]]; then
+    echo "✅ Success: All tasks in $PRD are completed."
+    break
+  fi
+
+  echo -e "\n--- Iteration $i: $INCOMPLETE_TASKS tasks remaining ---"
+
+  # 3. Agent Execution (Config-Agnostic)
+  # Prompt updated to focus on ADRs and removal of redundant methodology lines.
+  OUTPUT=$(opencode run "
+    @AGENTS.md @$PRD @$PROGRESS
+    
+    GOAL: Complete the next failing task in $PRD.
+    
+    1. Update $PRD (set 'passes': true) only after verification.
+    2. Append a single summary line of work performed to $PROGRESS.
+    3. Output 'STOP_LOOP' only if the entire backlog is true.
+    4. Create or update an ADR for technical and architectural decisions.
+  " --quiet)
+
+  # 4. Check for AI-driven completion signal
+  if echo "$OUTPUT" | grep -q "STOP_LOOP"; then
+    echo "✅ AI signaled completion."
+    break
+  fi
+
+  # 5. Dynamic Metadata Git Commit
+  git add .
+  if ! git diff --cached --quiet; then
+    # Extract the last non-blank line from progress.txt
+    # grep '[^[:space:]]' filters out empty lines or lines with only whitespace.
+    LOG_MSG=$(grep '[^[:space:]]' "$PROGRESS" | tail -n 1 | xargs)
+    
+    # Construct commit message with prefix and iteration number
+    # Fallback message provided if progress.txt extraction fails.
+    COMMIT_MSG="ralph #$i: ${LOG_MSG:-Advancing PRD implementation}"
+    
+    git commit -m "$COMMIT_MSG" --quiet
+    echo "Committed: $COMMIT_MSG"
+  else
+    echo "⚠️ Warning: No file changes detected in iteration $i."
+  fi
+
+  # 6. Maintenance: Keep progress log at a manageable size
+  if [ -f "$PROGRESS" ]; then
+    tail -n 15 "$PROGRESS" > "${PROGRESS}.tmp" && mv "${PROGRESS}.tmp" "$PROGRESS"
+  fi
+done
