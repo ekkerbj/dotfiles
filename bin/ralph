@@ -1,9 +1,8 @@
 #!/bin/bash
-# ralph.sh - ADR-Aware Metadata-Driven Loop
+# ralph.sh - Finalized Resilient Loop (Verbose Mode)
 
-# 1. Environment & Pre-flight Diagnostics
 if ! command -v jq &> /dev/null; then
-    echo "❌ Error: 'jq' is not installed. Required for PRD verification."
+    echo "❌ Error: 'jq' is not installed."
     exit 1
 fi
 
@@ -11,27 +10,21 @@ PRD="prd.json"
 PROGRESS="progress.txt"
 LIMIT=${1:-10}
 
-if [[ ! -f "$PRD" ]]; then
-    echo "❌ Error: $PRD not found."
-    exit 1
-fi
-
 echo "🚀 Starting Ralph Loop ($LIMIT max iterations)"
 
 for ((i=1; i<=LIMIT; i++)); do
-  # 2. External State Verification (Gatekeeper)
-  # Uses jq to count backlog items where 'passes' is false.
+  # 1. External State Verification
   INCOMPLETE_TASKS=$(jq '[.backlog[] | select(.passes == false)] | length' "$PRD")
   
   if [[ "$INCOMPLETE_TASKS" -eq 0 ]]; then
-    echo "✅ Success: All tasks in $PRD are completed."
+    echo "✅ Success: PRD completed prior to iteration."
     break
   fi
 
   echo -e "\n--- Iteration $i: $INCOMPLETE_TASKS tasks remaining ---"
 
-  # 3. Agent Execution (Config-Agnostic)
-  # Prompt updated to focus on ADRs and removal of redundant methodology lines.
+  # 2. Agent Execution
+  # Removed --quiet to prevent startup failures.
   OUTPUT=$(opencode run "
     @AGENTS.md @$PRD @$PROGRESS
     
@@ -41,23 +34,12 @@ for ((i=1; i<=LIMIT; i++)); do
     2. Append a single summary line of work performed to $PROGRESS.
     3. Output 'STOP_LOOP' only if the entire backlog is true.
     4. Create or update an ADR for technical and architectural decisions.
-  " --quiet)
+  ")
 
-  # 4. Check for AI-driven completion signal
-  if echo "$OUTPUT" | grep -q "STOP_LOOP"; then
-    echo "✅ AI signaled completion."
-    break
-  fi
-
-  # 5. Dynamic Metadata Git Commit
+  # 3. Persistence Logic
   git add .
   if ! git diff --cached --quiet; then
-    # Extract the last non-blank line from progress.txt
-    # grep '[^[:space:]]' filters out empty lines or lines with only whitespace.
     LOG_MSG=$(grep '[^[:space:]]' "$PROGRESS" | tail -n 1 | xargs)
-    
-    # Construct commit message with prefix and iteration number
-    # Fallback message provided if progress.txt extraction fails.
     COMMIT_MSG="ralph #$i: ${LOG_MSG:-Advancing PRD implementation}"
     
     git commit -m "$COMMIT_MSG" --quiet
@@ -66,8 +48,12 @@ for ((i=1; i<=LIMIT; i++)); do
     echo "⚠️ Warning: No file changes detected in iteration $i."
   fi
 
-  # 6. Maintenance: Keep progress log at a manageable size
-  if [ -f "$PROGRESS" ]; then
-    tail -n 15 "$PROGRESS" > "${PROGRESS}.tmp" && mv "${PROGRESS}.tmp" "$PROGRESS"
+  # 4. Process Exit Signal
+  if echo "$OUTPUT" | grep -q "STOP_LOOP"; then
+    echo "✅ AI signaled completion. Exiting loop."
+    break
   fi
+
+  # 5. Maintenance
+  [ -f "$PROGRESS" ] && tail -n 15 "$PROGRESS" > "${PROGRESS}.tmp" && mv "${PROGRESS}.tmp" "$PROGRESS"
 done
