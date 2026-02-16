@@ -10,6 +10,8 @@ PRD="prd.json"
 PROGRESS="progress.txt"
 LIMIT=${1:-10}
 
+touch "$PROGRESS"
+
 echo "🚀 Starting Ralph Loop ($LIMIT max iterations)"
 
 for ((i=1; i<=LIMIT; i++)); do
@@ -28,6 +30,7 @@ for ((i=1; i<=LIMIT; i++)); do
   OUTPUT=$(opencode run "
     @AGENTS.md @$PRD @$PROGRESS
     
+    CONTEXT: Using instructions from @AGENTS.md.
     GOAL: Complete the next failing task in $PRD.
     
     1. Update $PRD (set 'passes': true) only after verification.
