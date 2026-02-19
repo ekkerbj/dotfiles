@@ -30,10 +30,10 @@ for ((i=1; i<=LIMIT; i++)); do
   OUTPUT=$(opencode run "
     @AGENTS.md @$PRD @$PROGRESS
     
-    CONTEXT: Using instructions from @AGENTS.md.
+    CONTEXT: Using instructions from @AGENTS.md.  Read the adr/ files and other documentation to understand architectural decisions.
     GOAL: Complete the next failing task in $PRD.
     
-    1. Update $PRD (set 'passes': true) only after verification.
+    1. Update $PRD (set 'passes': true) only after verification.  That includes a successful build with no errors, including ALL tests passing ( unit and instrumented tests ).
     2. Append a single summary line of work performed to $PROGRESS.
     3. Output 'STOP_LOOP' only if the entire backlog is true.
     4. Create or update an ADR for technical and architectural decisions.
