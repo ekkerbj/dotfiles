@@ -1,75 +1,71 @@
 # dotfiles
 
-Personal shell tooling and configuration files used to bootstrap and maintain a local developer environment.
+Personal shell, editor, and tooling configuration files used to bootstrap and maintain a local developer environment.
 
 ## Overview
 
-This repository is a curated set of:
-- command-line helper scripts
-- Git, Groovy, and Maven configuration
-- workflow utilities for local automation
+This repository contains:
+- Shell configuration (`bashrc`, `qg.bashrc`)
+- Editor configuration for Emacs and Vim
+- Utility scripts for local automation and AI-assisted development
+- A symlink installer to wire configs into the home directory
 
-Some scripts are environment-specific (for example, internal hosts, legacy systems, or team-specific workflows). Review scripts before running them in a new environment.
+Some files are environment-specific (for example, `qg.bashrc` contains legacy work-environment settings). Review before using in a new environment.
 
 ## Repository Layout
 
 | Path | Purpose |
 | --- | --- |
-| `bin/` | Executable helper scripts and automation commands |
-| `git/git.config` | Git configuration baseline |
-| `groovy/grapeConfig.xml` | Groovy Grape dependency configuration |
-| `maven/settings.xml` | Maven settings used by local builds |
+| `bashrc` | Main Bash configuration (bash-it, RVM, editor, prompt) |
+| `qg.bashrc` | Environment-specific Bash config (keychain SSH agent, proxy settings) |
+| `vimrc` | Vim configuration |
+| `emacs` | Emacs init file |
+| `emacs.d/` | Emacs configuration directory |
+| `makesymlinks.sh` | Symlinks dotfiles into `~` (backs up any existing files first) |
+| `bin/ralph` | AI-assisted iterative loop for completing PRD backlog tasks |
+| `bin/update-all.sh` | Runs `git pull` + `git gc` on every git repo under the current directory |
+| `bin/cleantilde.sh` | Finds and deletes Emacs backup files (`*~`) |
 | `RALPH-README.md` | Recommended `prd.json` format and acceptance-test conventions for `bin/ralph` |
 
 ## Quick Start
-
-1. Clone the repository.
-2. Add selected scripts to `PATH`.
-3. Link or copy configuration files as needed.
-
-Example setup:
 
 ```bash
 git clone <your-repo-url> ~/dotfiles
 cd ~/dotfiles
 
-# Add scripts to PATH for current shell session
-export PATH="$PWD/bin:$PATH"
+# Symlink bashrc, vimrc, and Xresources into ~
+# Existing files are backed up to ~/dotfiles_old/
+bash makesymlinks.sh
 
-# Optional: persist PATH in shell profile
+# Add bin/ scripts to PATH
 echo 'export PATH="$HOME/dotfiles/bin:$PATH"' >> ~/.bashrc
 ```
 
-## Script Usage Notes
-
-- Scripts in `bin/` are not a single cohesive application; they are utility commands.
-- Some scripts may require external tools or credentials.
-- Prefer running unfamiliar scripts with `bash -x` in a safe environment first.
-
 ## Ralph Loop (`bin/ralph`)
 
-`ralph` runs an iterative loop for AI-assisted task completion and checks `prd.json` for remaining work.
-
-Basic usage:
+`ralph` drives an AI agent in a loop until all backlog items in `prd.json` have `"passes": true`.
 
 ```bash
 # Defaults to engine=copilot, limit=10
-./bin/ralph
+ralph
 
 # Explicit engine and iteration limit
-./bin/ralph --engine codex 20
+ralph --engine codex 20
+ralph opencode 5
 ```
+
+Supported engine aliases: `copilot` / `cp`, `codex` / `cd`, `opencode` / `oc`
 
 Requirements:
 - `jq`
 - `git`
 - one supported engine CLI installed (`copilot`, `codex`, or `opencode`)
+- `AGENTS.md`, `prd.json`, and `progress.txt` present in the working directory
 
-Related documentation:
-- See `RALPH-README.md` for recommended behavior-first `prd.json` structure using Given/When/Then acceptance tests.
+See `RALPH-README.md` for the recommended behavior-first `prd.json` format with Given/When/Then acceptance tests.
 
 ## Safety and Portability
 
 - Treat all scripts as executable code and audit before use.
-- Validate hostnames, paths, and credentials before running deployment or environment scripts.
-- Keep local overrides out of source control when they contain sensitive data.
+- `qg.bashrc` contains site-specific hostnames and proxy URLs — update or omit before use elsewhere.
+- Keep local overrides containing sensitive data out of source control.
