@@ -1,61 +1,187 @@
 #!/bin/bash
-# ralph.sh - Finalized Resilient Loop (Verbose Mode)
+# ralph - unified resilient loop for copilot, codex, or opencode
 
-if ! command -v jq &> /dev/null; then
-    echo "❌ Error: 'jq' is not installed."
-    exit 1
-fi
+set -o pipefail
 
 PRD="prd.json"
 PROGRESS="progress.txt"
-LIMIT=${1:-10}
+AGENTS_FILE="AGENTS.md"
+ENGINE="copilot"
+LIMIT=10
 
-touch "$PROGRESS"
+PROMPT=$(cat <<EOF
+@$AGENTS_FILE @$PRD @$PROGRESS
 
-echo "🚀 Starting Ralph Loop ($LIMIT max iterations)"
+GOAL: Complete the next failing task in $PRD.
+
+1. Update $PRD (set 'passes': true) only after verification.
+2. Append a single summary line of work performed to $PROGRESS.
+3. Output 'STOP_LOOP' only if every entry in the $PRD backlog has passes set to true.
+4. Create or update an ADR for technical and architectural decisions.
+EOF
+)
+
+die() {
+  echo "Error: $*"
+  exit 1
+}
+
+usage() {
+  cat <<EOF
+Usage:
+  ralph [LIMIT]
+  ralph [ENGINE] [LIMIT]
+  ralph --engine ENGINE [LIMIT]
+
+ENGINE values: copilot | codex | opencode
+Default ENGINE: copilot
+Default LIMIT: 10
+EOF
+}
+
+normalize_engine() {
+  case "$1" in
+    copilot|cp)
+      echo "copilot"
+      ;;
+    codex|cd)
+      echo "codex"
+      ;;
+    opencode|oc)
+      echo "opencode"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -e|--engine)
+        shift
+        if [[ -z "$1" ]]; then
+          echo "Error: Missing value for --engine."
+          usage
+          exit 1
+        fi
+        ENGINE=$(normalize_engine "$1") || {
+          echo "Error: Unsupported engine '$1'."
+          usage
+          exit 1
+        }
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      copilot|cp|codex|cd|opencode|oc)
+        ENGINE=$(normalize_engine "$1")
+        ;;
+      ''|*[!0-9]*)
+        echo "Error: Invalid argument '$1'."
+        usage
+        exit 1
+        ;;
+      *)
+        LIMIT="$1"
+        ;;
+    esac
+    shift
+  done
+}
+
+require_tool() {
+  if ! command -v "$1" &> /dev/null; then
+    die "'$1' is not installed."
+  fi
+}
+
+run_agent() {
+  local prompt="$1"
+  local output_file="$2"
+  local -a cmd
+
+  case "$ENGINE" in
+    copilot)
+      cmd=(copilot --yolo -p "$prompt")
+      ;;
+    codex)
+      cmd=(codex exec --full-auto "$prompt")
+      ;;
+    opencode)
+      cmd=(opencode run "$prompt")
+      ;;
+    *)
+      die "Unsupported engine '$ENGINE'."
+      ;;
+  esac
+
+  "${cmd[@]}" </dev/null 2>&1 | tee "$output_file"
+  return ${PIPESTATUS[0]}
+}
+
+parse_args "$@"
+
+require_tool jq
+require_tool git
+require_tool "$ENGINE"
+
+for required in "$AGENTS_FILE" "$PRD" "$PROGRESS"; do
+  if [[ ! -f "$required" ]]; then
+    die "Required file '$required' not found in $(pwd)."
+  fi
+done
+
+echo "Starting Ralph Loop ($LIMIT max iterations, engine=$ENGINE)"
 
 for ((i=1; i<=LIMIT; i++)); do
   # 1. External State Verification
   INCOMPLETE_TASKS=$(jq '[.backlog[] | select(.passes == false)] | length' "$PRD")
-  
+
   if [[ "$INCOMPLETE_TASKS" -eq 0 ]]; then
-    echo "✅ Success: PRD completed prior to iteration."
+    echo "Success: PRD completed prior to iteration."
     break
   fi
 
   echo -e "\n--- Iteration $i: $INCOMPLETE_TASKS tasks remaining ---"
 
   # 2. Agent Execution
-  # Removed --quiet to prevent startup failures.
-  OUTPUT=$(opencode run "
-    @AGENTS.md @$PRD @$PROGRESS
-    
-    CONTEXT: Using instructions from @AGENTS.md.  Read the adr/ files and other documentation to understand architectural decisions.
-    GOAL: Complete the next failing task in $PRD.
-    
-    1. Update $PRD (set 'passes': true) only after verification.  That includes a successful build with no errors, including ALL tests passing ( unit and instrumented tests ).
-    2. Append a single summary line of work performed to $PROGRESS.
-    3. Output 'STOP_LOOP' only if the entire backlog is true.
-    4. Create or update an ADR for technical and architectural decisions.
-  ")
+  OUTPUT_FILE=$(mktemp)
+  run_agent "$PROMPT" "$OUTPUT_FILE"
+  AGENT_STATUS=$?
+
+  if [[ "$AGENT_STATUS" -ne 0 ]]; then
+    rm -f "$OUTPUT_FILE"
+    echo "Error: $ENGINE failed with exit code $AGENT_STATUS in iteration $i."
+    continue
+  fi
 
   # 3. Persistence Logic
   git add .
   if ! git diff --cached --quiet; then
     LOG_MSG=$(grep '[^[:space:]]' "$PROGRESS" | tail -n 1 | xargs)
     COMMIT_MSG="ralph #$i: ${LOG_MSG:-Advancing PRD implementation}"
-    
-    git commit -m "$COMMIT_MSG" --quiet
-    echo "Committed: $COMMIT_MSG"
+
+    if git commit -m "$COMMIT_MSG" --quiet; then
+      echo "Committed: $COMMIT_MSG"
+    else
+      rm -f "$OUTPUT_FILE"
+      die "git commit failed in iteration $i."
+    fi
   else
-    echo "⚠️ Warning: No file changes detected in iteration $i."
+    echo "Warning: No file changes detected in iteration $i."
   fi
 
   # 4. Process Exit Signal
-  if echo "$OUTPUT" | grep -q "STOP_LOOP"; then
-    echo "✅ AI signaled completion. Exiting loop."
+  if grep -q "STOP_LOOP" "$OUTPUT_FILE"; then
+    echo "AI signaled completion. Exiting loop."
+    rm -f "$OUTPUT_FILE"
     break
   fi
+
+  rm -f "$OUTPUT_FILE"
 
   # 5. Maintenance
   [ -f "$PROGRESS" ] && tail -n 15 "$PROGRESS" > "${PROGRESS}.tmp" && mv "${PROGRESS}.tmp" "$PROGRESS"
