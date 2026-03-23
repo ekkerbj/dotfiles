@@ -23,7 +23,7 @@ Some files are environment-specific (for example, `qg.bashrc` contains legacy wo
 | `emacs.d/` | Emacs configuration directory |
 | `makesymlinks.sh` | Symlinks dotfiles into `~` (backs up any existing files first) |
 | `bin/ralph` | AI-assisted iterative loop for completing PRD backlog tasks |
-| `bin/update-all.sh` | Runs `git pull` + `git gc` on every git repo under the current directory |
+| `bin/update-all.sh` | Runs `git pull` + `git gc` on every git repo under the current directory, skipping repos without remotes |
 | `bin/cleantilde.sh` | Finds and deletes Emacs backup files (`*~`) |
 | `RALPH-README.md` | Recommended `prd.json` format and acceptance-test conventions for `bin/ralph` |
 
