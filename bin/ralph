@@ -175,9 +175,8 @@ for ((i=1; i<=LIMIT; i++)); do
   fi
 
   # 4. Process Exit Signal
-  if grep -q "STOP_LOOP" "$OUTPUT_FILE"; then
+  if tail -n 5 "$OUTPUT_FILE" | grep -q "^STOP_LOOP$"; then
     echo "AI signaled completion. Exiting loop."
-    rm -f "$OUTPUT_FILE"
     break
   fi
 
