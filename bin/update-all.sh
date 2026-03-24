@@ -1,22 +1,23 @@
-#! /bin/sh
+#!/bin/sh
 
 WORKDIR=$PWD
 
-for projectdir in $WORKDIR/*
+for projectdir in "$WORKDIR"/*
 do
-    if [ -d "$projectdir"/.git ]
+  if [ -d "$projectdir"/.git ]
+  then
+    echo "Updating $projectdir with Git"
+    cd "$projectdir"
+    if [ -n "$(git remote)" ]
     then
-	echo "Updating $projectdir via git"
-	cd "$projectdir" || exit 1
-	if [ -n "$(git remote)" ]
-	then
-		time git pull > update.log
-		time git gc >> update.log
-	else
-		echo "Skipping $projectdir (no remote)"
-	fi
-	echo "Done!"
-	echo ""
-	cd "$WORKDIR" || exit 1
+        git pull > update.log 2>&1
+        git gc >> update.log 2>&1
+    else
+        echo "Skipping $projectdir: no Git remote configured"
     fi
+    echo "Done!"
+    echo ""
+    cd "$WORKDIR"
+  fi
 done
+
